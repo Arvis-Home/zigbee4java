@@ -15,7 +15,7 @@ import java.net.URISyntaxException;
  */
 public class ZigBeeConsoleJavaSE
 {
-	private static final int DefaultBaudRate = 38400;
+	private static final int DefaultBaudRate = 115200;
 
 	private ZigBeeConsoleJavaSE(){}
 
