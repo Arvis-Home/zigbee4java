@@ -11,7 +11,14 @@ android {
     lintOptions {
         abortOnError false
     }
-
+    compileSdkVersion 18
+    dexOptions {
+        incremental true
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_7
+        targetCompatibility JavaVersion.VERSION_1_7
+    }
 }
 
 dependencies {

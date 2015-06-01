@@ -22,11 +22,11 @@ import org.bubblecloud.zigbee.console.command.impl.UnbindCommand;
 import org.bubblecloud.zigbee.console.command.impl.UnlistenCommand;
 import org.bubblecloud.zigbee.console.command.impl.UnsubscribeCommand;
 import org.bubblecloud.zigbee.console.command.impl.WriteCommand;
+import org.bubblecloud.zigbee.lang.observe.StateChangeObserver;
 import org.bubblecloud.zigbee.network.model.DiscoveryMode;
 import org.bubblecloud.zigbee.network.port.ZigBeePort;
-import org.bubblecloud.zigbee.util.LifecycleState;
-import org.bubblecloud.zigbee.util.ObservableState;
-import org.bubblecloud.zigbee.util.ObservableState.StateChangeHandler;
+import org.bubblecloud.zigbee.util.lifecycle.LifecycleState;
+import org.bubblecloud.zigbee.lang.observe.ObservableState;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -155,7 +155,7 @@ public final class ZigBeeConsole {
         printStream.print("ZigBee Console starting up...");
 
         zigBeeApi = new ZigBeeApi(port, pan, channel, resetNetwork, getDiscoveryModes());
-        zigBeeApi.getState().addObserver(zigbeeApiStateChangeHandler);
+        zigBeeApi.getState().addObserver(zigbeeApiStateChangeObserver);
 
         restoreNetworkState(zigBeeApi);
 
@@ -213,10 +213,9 @@ public final class ZigBeeConsole {
         }
     }
 
-    private final StateChangeHandler<LifecycleState> zigbeeApiStateChangeHandler = new StateChangeHandler<LifecycleState>()
-    {
+    private final StateChangeObserver<LifecycleState> zigbeeApiStateChangeObserver = new StateChangeObserver<LifecycleState>() {
         @Override
-        public void handleStatusChange(final LifecycleState newStatus)
+        public void onStateChanged(final LifecycleState newStatus)
         {
             switch(newStatus)
             {
@@ -225,7 +224,7 @@ public final class ZigBeeConsole {
 
                     zigBeeApi.addDeviceListener(loggingDeviceListener);
 
-                    onZigbeeApiStart();
+                    consoleThread.start();
                     break;
 
                 case Stopped:
@@ -270,10 +269,13 @@ public final class ZigBeeConsole {
         }
     };
 
-    private void onZigbeeApiStart()
+    private Runnable consoleThreadMain = new Runnable()
     {
-        // TODO Use something like a command line parameter to decide if permit join is re-enabled
-        // Lets disable the join functionality in console by default to improve security.
+        @Override
+        public void run()
+        {
+            // TODO Use something like a command line parameter to decide if permit join is re-enabled
+            // Lets disable the join functionality in console by default to improve security.
         /*if (!zigBeeApi.permitJoin(true)) {
             print("ZigBee API permit join enable ... [FAIL]");
         } else {
@@ -281,29 +283,31 @@ public final class ZigBeeConsole {
         }*/
 
 
+            printStream.print("Browsing network for the first time...");
+            while (!(state.is(LifecycleState.Stopping)) && !NetworkStateFile.exists() && !zigBeeApi.isInitialBrowsingComplete()) {
 
-        printStream.print("Browsing network for the first time...");
-        while (!(state.is(LifecycleState.Stopping)) && !NetworkStateFile.exists() && !zigBeeApi.isInitialBrowsingComplete()) {
-
-            printStream.print('.');
-            try {
-                Thread.sleep(250);
-            } catch (InterruptedException e) {
-                break;
+                printStream.print('.');
+                try {
+                    Thread.sleep(250);
+                } catch (InterruptedException e) {
+                    break;
+                }
             }
+            printStream.println("[OK]");
+
+            print("There are " + zigBeeApi.getDevices().size() + " known devices in the network.");
+
+            print("ZigBee console ready.");
+
+            String inputLine;
+            while (!(state.is(LifecycleState.Stopping)) && (inputLine = readLine()) != null) {processInputLine(inputLine);
+            }
+
+            stop();
         }
-        printStream.println("[OK]");
+    };
 
-        print("There are " + zigBeeApi.getDevices().size() + " known devices in the network.");
-
-        print("ZigBee console ready.");
-
-        String inputLine;
-        while (!(state.is(LifecycleState.Stopping)) && (inputLine = readLine()) != null) {processInputLine(inputLine);
-        }
-
-        stop();
-    }
+    private final Thread consoleThread = new Thread(consoleThreadMain, "ZigBee Console Main Thread");
 
     public ConsoleCommand getCommandByName(String name) {
         return commands.get(name);
@@ -326,12 +330,12 @@ public final class ZigBeeConsole {
         final String[] args = inputLine.split(" ");
         try {
             if (commands.containsKey(args[0])) {
-                executeCommand(zigBeeApi, args[0], args);
+                executeCommand(args[0], args);
                 return;
             } else {
                 for (final String command : commands.keySet()) {
                     if (command.charAt(0) == inputLine.charAt(0)) {
-                        executeCommand(zigBeeApi, command, args);
+                        executeCommand(command, args);
                         return;
                     }
                 }
@@ -345,11 +349,10 @@ public final class ZigBeeConsole {
 
     /**
      * Executes command.
-     * @param zigbeeApi the ZigBee API
      * @param command the command
      * @param args the arguments including the command
      */
-    private void executeCommand(final ZigBeeApi zigbeeApi, final String command, final String[] args) {
+    private void executeCommand(final String command, final String[] args) {
         final ConsoleCommand consoleCommand = commands.get(command);
         if (!consoleCommand.process(this, args)) {
             print(consoleCommand.getSyntax());

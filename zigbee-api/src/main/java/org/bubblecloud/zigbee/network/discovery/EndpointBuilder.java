@@ -22,6 +22,8 @@
 
 package org.bubblecloud.zigbee.network.discovery;
 
+import org.bubblecloud.zigbee.lang.observe.Observable;
+import org.bubblecloud.zigbee.lang.observe.ObservableState;
 import org.bubblecloud.zigbee.network.ZigBeeEndpoint;
 import org.bubblecloud.zigbee.network.ZigBeeNode;
 import org.bubblecloud.zigbee.network.ZigBeeNetworkManager;
@@ -37,7 +39,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 
 /**
@@ -52,7 +58,7 @@ import java.util.Map.Entry;
  * @version $LastChangedRevision: 799 $ ($LastChangedDate: 2013-08-06 19:00:05 +0300 (Tue, 06 Aug 2013) $)
  * @since 0.1.0
  */
-public class EndpointBuilder implements Stoppable {
+public class EndpointBuilder extends Observable<EndpointBuilderObserver> implements Stoppable {
 
     private static final Logger logger = LoggerFactory.getLogger(EndpointBuilder.class);
 
@@ -83,8 +89,11 @@ public class EndpointBuilder implements Stoppable {
     }
 
     public EndpointBuilder(ImportingQueue queue, ZigBeeNetworkManager driver) {
+        super(EndpointBuilderObserver.class);
         this.queue = queue;
         this.driver = driver;
+
+        refreshState();
     }
 
 
@@ -240,18 +249,24 @@ public class EndpointBuilder implements Stoppable {
     private void inspectNewEndpoint() {
         nextInspectionSlot = 10 + System.currentTimeMillis();
         final ImportingQueue.ZigBeeNodeAddress dev = queue.pop();
+        refreshState();
         if (dev == null)  {
             return;
         }
+
         inspectingNewEndpoint = true;
+        refreshState();
+
         final ZToolAddress16 nwk = dev.getNetworkAddress();
         final ZToolAddress64 ieee = dev.getIeeeAddress();
         logger.debug("Inspecting device {}.", IEEEAddress.toString(ieee.getLong()));
         inspectNode(nwk, ieee);
         logger.debug("Endpoint inspection completed, next inspection slot in {}",
-                Math.max(nextInspectionSlot - System.currentTimeMillis(), 0)
+                     Math.max(nextInspectionSlot - System.currentTimeMillis(), 0)
         );
+
         inspectingNewEndpoint = false;
+        refreshState();
     }
 
     private void inspectFailedEndpoint() {
@@ -298,19 +313,32 @@ public class EndpointBuilder implements Stoppable {
                 }
                 ThreadUtils.waitingUntil(nextInspectionSlot);
 
-                if (queue.size() > 0 && failedEndpoints.size() > 0) {
-                    double sel = Math.random();
-                    if (sel > 0.6) {
+                final boolean
+                        isQueueEmpty       = queue.isEmpty(),
+                        hasFailedEndpoints = !failedEndpoints.isEmpty();
+
+                if(isQueueEmpty) {
+                    if(hasFailedEndpoints) {
                         inspectFailedEndpoint();
-                    } else {
+                    }
+                    else {
                         inspectNewEndpoint();
                     }
-                } else if (queue.size() == 0 && failedEndpoints.size() > 0) {
-                    inspectFailedEndpoint();
-                } else if (queue.size() > 0 && failedEndpoints.size() == 0) {
-                    inspectNewEndpoint();
-                } else if (queue.size() == 0 && failedEndpoints.size() == 0) {
-                    inspectNewEndpoint();
+                }
+                else {
+                    if( hasFailedEndpoints ) {
+                        final double sel = Math.random();
+
+                        if (sel > 0.6) {
+                            inspectFailedEndpoint();
+                        }
+                        else {
+                            inspectNewEndpoint();
+                        }
+                    }
+                    else {
+                        inspectNewEndpoint();
+                    }
                 }
 
             } catch (Exception e) {
@@ -329,7 +357,22 @@ public class EndpointBuilder implements Stoppable {
         end = true;
     }
 
-    public boolean isReady() {
-        return queue.isEmpty() && !inspectingNewEndpoint;
+    private ObservableState<EndpointBuilderState> state = new ObservableState<>(EndpointBuilderState.Idle);
+
+    private void refreshState() {
+
+        final EndpointBuilderState state;
+
+        if(inspectingNewEndpoint) {
+            state = EndpointBuilderState.Inspecting;
+        }
+        else if(queue.isEmpty()) {
+            state = EndpointBuilderState.Ready;
+        }
+        else {
+            state = EndpointBuilderState.Pending;
+        }
+
+        this.state.set(state);
     }
 }

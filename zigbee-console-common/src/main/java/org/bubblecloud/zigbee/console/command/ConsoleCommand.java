@@ -8,6 +8,10 @@ import org.bubblecloud.zigbee.console.ZigBeeConsole;
  */
 public interface ConsoleCommand {
 
+    /**
+     * Get command name.
+     * @return the command name
+     */
     String getName();
 
     /**

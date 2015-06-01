@@ -15,7 +15,9 @@
  */
 package org.bubblecloud.zigbee;
 
+import org.bubblecloud.zigbee.lang.observe.Observable;
 import org.bubblecloud.zigbee.network.EndpointListener;
+import org.bubblecloud.zigbee.network.ZigBeeApiObserver;
 import org.bubblecloud.zigbee.network.ZigBeeEndpoint;
 import org.bubblecloud.zigbee.network.discovery.ZigBeeDiscoveryManager;
 import org.bubblecloud.zigbee.network.impl.NetworkStateSerializer;
@@ -42,19 +44,22 @@ import org.bubblecloud.zigbee.api.device.impl.*;
 import org.bubblecloud.zigbee.api.DeviceBase;
 import org.bubblecloud.zigbee.network.port.ZigBeeNetworkManagerImpl;
 import org.bubblecloud.zigbee.network.port.ZigBeePort;
-import org.bubblecloud.zigbee.util.LifecycleState;
-import org.bubblecloud.zigbee.util.ObservableState;
+import org.bubblecloud.zigbee.util.lifecycle.LifecycleState;
+import org.bubblecloud.zigbee.lang.observe.ObservableState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
+
 
 /**
  * ZigBee Application Interface.
  * @author <a href="mailto:tommi.s.e.laukkanen@gmail.com">Tommi S.E. Laukkanen</a>
  * @author <a href="mailto:christopherhattonuk@gmail.com">Chris Hatton</a>
  */
-public class ZigBeeApi implements EndpointListener, DeviceListener {
+public class ZigBeeApi extends Observable<ZigBeeApiObserver> implements EndpointListener, DeviceListener {
 
     private final ObservableState<LifecycleState> state = new ObservableState<>(LifecycleState.Stopped);
     public final ObservableState<LifecycleState> getState() { return state; }
@@ -91,6 +96,7 @@ public class ZigBeeApi implements EndpointListener, DeviceListener {
      */
     public ZigBeeApi(final ZigBeePort port, final int pan, final int channel,
             final EnumSet<DiscoveryMode> discoveryModes, final boolean resetNetwork) {
+        super(ZigBeeApiObserver.class);
         networkManager = new ZigBeeNetworkManagerImpl(port,
                 NetworkMode.Coordinator, pan, channel, resetNetwork, 2500L);
 
@@ -107,6 +113,7 @@ public class ZigBeeApi implements EndpointListener, DeviceListener {
      */
     public ZigBeeApi(final ZigBeePort port, final int pan, final int channel,
                      final boolean resetNetwork, final EnumSet<DiscoveryMode> discoveryModes) {
+        super(ZigBeeApiObserver.class);
 
         networkManager   = new ZigBeeNetworkManagerImpl(port, NetworkMode.Coordinator, pan, channel, resetNetwork, 2500L);
         discoveryManager = new ZigBeeDiscoveryManager(networkManager, discoveryModes);

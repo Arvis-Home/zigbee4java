@@ -2,7 +2,7 @@ package org.bubblecloud.zigbee.console.command.impl;
 
 import org.bubblecloud.zigbee.console.ZigBeeConsole;
 import org.bubblecloud.zigbee.console.command.AbstractCommand;
-import org.bubblecloud.zigbee.util.LifecycleState;
+import org.bubblecloud.zigbee.util.lifecycle.LifecycleState;
 
 /**
  * Quits console.

@@ -30,15 +30,19 @@ import org.bubblecloud.zigbee.network.packet.ZToolAddress16;
 import org.bubblecloud.zigbee.network.packet.zdo.ZDO_IEEE_ADDR_REQ;
 import org.bubblecloud.zigbee.network.packet.zdo.ZDO_IEEE_ADDR_RSP;
 import org.bubblecloud.zigbee.util.Integers;
-import org.bubblecloud.zigbee.util.RunnableThread;
-import org.bubblecloud.zigbee.util.ThreadUtils;
 import org.bubblecloud.zigbee.network.ZigBeeNode;
+import org.bubblecloud.zigbee.util.TimePeriod;
+import org.bubblecloud.zigbee.util.lifecycle.AbstractLifecycleObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
+import static org.bubblecloud.zigbee.util.lifecycle.LifecycleState.*;
 
 /**
  * @author <a href="mailto:stefano.lenzi@isti.cnr.it">Stefano "Kismet" Lenzi</a>
@@ -46,7 +50,9 @@ import java.util.HashMap;
  * @version $LastChangedRevision: 799 $ ($LastChangedDate: 2013-08-06 19:00:05 +0300 (Tue, 06 Aug 2013) $)
  * @since 0.1.0
  */
-public class AssociationNetworkBrowser extends RunnableThread {
+public class AssociationNetworkBrowser extends AbstractLifecycleObject<AssociationNetworkBrowserObserver>
+{
+    public final TimePeriod NetworkBrowsingInterval = new TimePeriod(15, TimeUnit.MINUTES);
 
     private static final Logger logger = LoggerFactory.getLogger(AssociationNetworkBrowser.class);
 
@@ -55,8 +61,8 @@ public class AssociationNetworkBrowser extends RunnableThread {
     private final ImportingQueue queue;
     final ZigBeeNetworkManager driver;
 
-    final ArrayList<NetworkAddressNodeItem> toInspect = new ArrayList<NetworkAddressNodeItem>();
-    final HashMap<Integer, NetworkAddressNodeItem> alreadyInspected = new HashMap<Integer, NetworkAddressNodeItem>();
+    final ArrayList<NetworkAddressNodeItem> toInspect = new ArrayList<>();
+    final HashMap<Integer, NetworkAddressNodeItem> alreadyInspected = new HashMap<>();
     private boolean initialNetworkBrowsingComplete = false;
 
 
@@ -79,22 +85,34 @@ public class AssociationNetworkBrowser extends RunnableThread {
         }
     }
 
-    public AssociationNetworkBrowser(ImportingQueue queue, ZigBeeNetworkManager driver) {
-        this.queue = queue;
-        this.driver = driver;
+    private final ScheduledExecutorService scheduledExecutor;
+
+    public AssociationNetworkBrowser(ImportingQueue queue, ZigBeeNetworkManager driver, ScheduledExecutorService scheduledExecutor) {
+        super(AssociationNetworkBrowserObserver.class);
+
+        this.queue             = queue;
+        this.driver            = driver;
+        this.scheduledExecutor = scheduledExecutor;
     }
 
     public boolean isInitialNetworkBrowsingComplete() {
         return initialNetworkBrowsingComplete;
     }
 
-    public void task() {
-        final String threadName = Thread.currentThread().getName();
+    private ScheduledFuture<?> networkBrowsingFuture;
 
-        logger.trace("{} STARTED Succesfully", threadName);
+    @Override
+    protected void startImpl() {
+        networkBrowsingTask.run();
+        didStart();
+    }
 
-        while (!isDone()) {
-            long wakeUpTime = System.currentTimeMillis() + 15 * 60 * 1000;
+    private final Runnable networkBrowsingTask = new Runnable() {
+        @Override
+        public void run() {
+
+            logger.debug("Network browsing started");
+
             cleanUpWalkingTree();
 
             logger.debug("Inspecting ZigBee network for new nodes.");
@@ -103,7 +121,7 @@ public class AssociationNetworkBrowser extends RunnableThread {
                 while (toInspect.size() != 0) {
                     final NetworkAddressNodeItem inspecting = toInspect.remove(toInspect.size() - 1);
 
-                    alreadyInspected.put((int) inspecting.address, inspecting);
+                    alreadyInspected.put(inspecting.address, inspecting);
                     logger.trace("Inspecting node #{}.", inspecting.address);
                     ZDO_IEEE_ADDR_RSP result = driver.sendZDOIEEEAddressRequest(
                             new ZDO_IEEE_ADDR_REQ((short) inspecting.address, ZDO_IEEE_ADDR_REQ.REQ_TYPE.EXTENDED, (byte) 0)
@@ -118,7 +136,7 @@ public class AssociationNetworkBrowser extends RunnableThread {
                                 inspecting.address, result.getAssociatedNodeCount()
                         );
                         inspecting.node = new ZigBeeNodeImpl(inspecting.address, result.getIeeeAddress(),
-                                (short) driver.getCurrentPanId());
+                                                             (short) driver.getCurrentPanId());
 
                         ZToolAddress16 nwk = new ZToolAddress16(
                                 Integers.getByteAsInteger(inspecting.address, 1),
@@ -134,13 +152,25 @@ public class AssociationNetworkBrowser extends RunnableThread {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            logger.debug("Network browsing completed, waiting until {}", wakeUpTime);
-            initialNetworkBrowsingComplete = true;
-            if (!isDone()) ThreadUtils.waitingUntil(wakeUpTime);
-        }
-        logger.debug("{} TERMINATED Succesfully", threadName);
-    }
 
+            initialNetworkBrowsingComplete = true;
+            getObserverNotifier().onInitialNetworkBrowsingComplete();
+
+            if(!(getState()==Stopping)) {
+                logger.debug("Network browsing completed, waiting until {}", NetworkBrowsingInterval.toString());
+                networkBrowsingFuture = scheduledExecutor.scheduleWithFixedDelay( networkBrowsingTask, 0, NetworkBrowsingInterval.units, NetworkBrowsingInterval.timeUnit);
+            }
+
+            logger.debug("Network browsing completed");
+        }
+    };
+
+    @Override
+    protected void stopImpl() {
+        if(networkBrowsingFuture !=null) {
+            networkBrowsingFuture.cancel(true);
+        }
+    }
 
     private void cleanUpWalkingTree() {
         alreadyInspected.clear();

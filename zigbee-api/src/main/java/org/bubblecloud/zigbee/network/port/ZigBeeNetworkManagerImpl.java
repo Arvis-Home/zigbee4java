@@ -33,7 +33,7 @@ import org.bubblecloud.zigbee.network.packet.zdo.*;
 import org.bubblecloud.zigbee.util.DoubleByte;
 import org.bubblecloud.zigbee.util.Integers;
 import org.bubblecloud.zigbee.network.model.*;
-import org.bubblecloud.zigbee.util.ObservableState;
+import org.bubblecloud.zigbee.lang.observe.ObservableState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -1084,7 +1084,7 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
         return announceListeners.add(listner);
     }
 
-    public boolean removeAnnunceListener(AnnounceListener listner) {
+    public boolean removeAnnounceListener(AnnounceListener listner) {
         boolean result = announceListeners.remove(listner);
         if (announceListeners.isEmpty() && isHardwareReady()) {
             zigbeeInterface.removeAsynchronousCommandListener(announceListenerFilter);
@@ -1174,7 +1174,7 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
         }
     }
 
-    public boolean addAFMessageListner(ApplicationFrameworkMessageListener listner) {
+    public boolean addAFMessageListener(ApplicationFrameworkMessageListener listner) {
         if (messageListeners.isEmpty() && isHardwareReady()) {
             if (zigbeeInterface.addAsynchronousCommandListener(afMessageListenerFilter)) {
                 logger.trace("Added AsynchrounsCommandListener {} to ZigBeeSerialInterface", afMessageListenerFilter.getClass().getName());

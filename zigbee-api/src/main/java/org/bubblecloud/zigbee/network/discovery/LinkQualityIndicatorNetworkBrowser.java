@@ -23,7 +23,10 @@
 package org.bubblecloud.zigbee.network.discovery;
 
 import org.bubblecloud.zigbee.network.ZigBeeNetworkManager;
+import org.bubblecloud.zigbee.network.ZigBeeNode;
+import org.bubblecloud.zigbee.network.impl.ApplicationFrameworkLayer;
 import org.bubblecloud.zigbee.network.impl.ZigBeeNetwork;
+import org.bubblecloud.zigbee.network.impl.ZigBeeNodeImpl;
 import org.bubblecloud.zigbee.network.packet.ZToolAddress16;
 import org.bubblecloud.zigbee.network.packet.zdo.ZDO_IEEE_ADDR_REQ;
 import org.bubblecloud.zigbee.network.packet.zdo.ZDO_IEEE_ADDR_RSP;
@@ -31,17 +34,16 @@ import org.bubblecloud.zigbee.network.packet.zdo.ZDO_MGMT_LQI_REQ;
 import org.bubblecloud.zigbee.network.packet.zdo.ZDO_MGMT_LQI_RSP;
 import org.bubblecloud.zigbee.network.packet.zdo.ZDO_MGMT_LQI_RSP.NeighborLqiListItemClass;
 import org.bubblecloud.zigbee.util.Integers;
-import org.bubblecloud.zigbee.util.RunnableThread;
-import org.bubblecloud.zigbee.util.ThreadUtils;
-import org.bubblecloud.zigbee.network.ZigBeeNode;
-import org.bubblecloud.zigbee.network.impl.ApplicationFrameworkLayer;
-import org.bubblecloud.zigbee.network.impl.ZigBeeNodeImpl;
+import org.bubblecloud.zigbee.util.TimePeriod;
+import org.bubblecloud.zigbee.util.lifecycle.AbstractPeriodicLifecycleObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 
 /**
@@ -51,7 +53,7 @@ import java.util.List;
  * @version $LastChangedRevision: 67 $ ($LastChangedDate: 2010-10-01 04:08:24 +0200 (ven, 01 ott 2010) $)
  * @since 0.7.0
  */
-public class LinkQualityIndicatorNetworkBrowser extends RunnableThread {
+public class LinkQualityIndicatorNetworkBrowser extends AbstractPeriodicLifecycleObject<LinkQualityIndicatorNetworkBrowserObserver> {
 
     private static final Logger logger = LoggerFactory.getLogger(LinkQualityIndicatorNetworkBrowser.class);
 
@@ -59,11 +61,74 @@ public class LinkQualityIndicatorNetworkBrowser extends RunnableThread {
     private static final short LQI_START_INDEX = 0;
 
     private final ImportingQueue queue;
-    final ZigBeeNetworkManager driver;
+    private final ZigBeeNetworkManager driver;
 
-    final ArrayList<NetworkAddressNodeItem> toInspect = new ArrayList<NetworkAddressNodeItem>();
-    final HashMap<Integer, NetworkAddressNodeItem> alreadyInspected = new HashMap<Integer, NetworkAddressNodeItem>();
-    private List<NetworkAddressNodeItem> connectedNodesFound = new ArrayList<NetworkAddressNodeItem>();
+    private final ArrayList<NetworkAddressNodeItem> toInspect = new ArrayList<>();
+    private final HashMap<Integer, NetworkAddressNodeItem> alreadyInspected = new HashMap<>();
+    private List<NetworkAddressNodeItem> connectedNodesFound = new ArrayList<>();
+
+    public LinkQualityIndicatorNetworkBrowser(ImportingQueue queue, ZigBeeNetworkManager driver, ScheduledExecutorService scheduledExecutorService) {
+        super(LinkQualityIndicatorNetworkBrowserObserver.class, scheduledExecutorService);
+
+        this.queue = queue;
+        this.driver = driver;
+    }
+
+    private static final TimePeriod QualityIndicationTimePeriod = new TimePeriod(4, TimeUnit.MINUTES);
+
+    @Override
+    protected TimePeriod getNextTimePeriod() {
+        return QualityIndicationTimePeriod;
+    }
+
+    private final Runnable qualityIndicationTask = new Runnable() {
+        @Override
+        public void run() {
+            cleanUpWalkingTree();
+
+            logger.debug("Inspecting ZigBee network for new nodes.");
+
+            try {
+                NetworkAddressNodeItem coordinator = getIeeeAddress(COORDINATOR_NWK_ADDRESS);
+                if (coordinator != null) {
+
+                    List<NetworkAddressNodeItem> coordinatorChildren = lqiRequestToNode(coordinator, LQI_START_INDEX);
+                    if (coordinatorChildren != null)
+                        toInspect.addAll(coordinatorChildren);
+
+                    ArrayList<NetworkAddressNodeItem> toInspectTemp = new ArrayList<NetworkAddressNodeItem>();
+
+                    while (!toInspect.isEmpty()) {
+                        inspectQueue(toInspectTemp);
+
+                        toInspect.clear();
+                        if (!toInspectTemp.isEmpty())
+                            for (int i = 0; i < toInspectTemp.size(); i++)
+                                toInspect.add(toInspectTemp.get(i));
+                        toInspectTemp.clear();
+                    }
+                    toInspect.clear();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    };
+
+    @Override
+    protected Runnable getNextPeriodTask() {
+        return qualityIndicationTask;
+    }
+
+    @Override
+    protected void startImpl() {
+
+    }
+
+    @Override
+    protected void stopImpl() {
+
+    }
 
     private class NetworkAddressNodeItem {
         final NetworkAddressNodeItem parent;
@@ -82,11 +147,6 @@ public class LinkQualityIndicatorNetworkBrowser extends RunnableThread {
                 return "< NULL ," + address + " / " + node + ">";
             }
         }
-    }
-
-    public LinkQualityIndicatorNetworkBrowser(ImportingQueue queue, ZigBeeNetworkManager driver) {
-        this.queue = queue;
-        this.driver = driver;
     }
 
     private NetworkAddressNodeItem getIeeeAddress(short nwkAddress) {
@@ -202,7 +262,7 @@ public class LinkQualityIndicatorNetworkBrowser extends RunnableThread {
     private void inspectQueue(ArrayList<NetworkAddressNodeItem> toInspectTemp) {
 
         for (int i = 0; i < toInspect.size(); i++) {
-            List<NetworkAddressNodeItem> children = new ArrayList<NetworkAddressNodeItem>();
+            List<NetworkAddressNodeItem> children;
             NetworkAddressNodeItem node = toInspect.get(i);
             if (node != null) {
                 children = lqiRequestToNode(node, LQI_START_INDEX);
@@ -212,54 +272,6 @@ public class LinkQualityIndicatorNetworkBrowser extends RunnableThread {
                 }
             }
         }
-    }
-
-    public void task() {
-
-        final String threadName = Thread.currentThread().getName();
-
-        logger.trace("{} STARTED Succesfully", threadName);
-
-        while (!isDone()) {
-            cleanUpWalkingTree();
-
-            logger.debug("Inspecting ZigBee network for new nodes.");
-
-            try {
-                NetworkAddressNodeItem coordinator = getIeeeAddress(COORDINATOR_NWK_ADDRESS);
-                if (coordinator != null) {
-
-                    //gt = new GraphThread();
-
-                    List<NetworkAddressNodeItem> coordinatorChildren = lqiRequestToNode(coordinator, LQI_START_INDEX);
-                    if (coordinatorChildren != null)
-                        toInspect.addAll(coordinatorChildren);
-
-                    ArrayList<NetworkAddressNodeItem> toInspectTemp = new ArrayList<NetworkAddressNodeItem>();
-
-                    while (!toInspect.isEmpty()) {
-                        inspectQueue(toInspectTemp);
-
-                        toInspect.clear();
-                        if (!toInspectTemp.isEmpty())
-                            for (int i = 0; i < toInspectTemp.size(); i++)
-                                toInspect.add(toInspectTemp.get(i));
-                        toInspectTemp.clear();
-                    }
-                    toInspect.clear();
-                }
-
-                long wakeUpTime = System.currentTimeMillis() + 5 * 60 * 1000;
-                if (!isDone()) ThreadUtils.waitingUntil(wakeUpTime);
-                logger.debug("Network browsing completed, waiting until {}", wakeUpTime);
-                //gt.run();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-
-        //gt.end();
-        logger.trace("{} TERMINATED Succesfully", threadName);
     }
 
     private void cleanUpWalkingTree() {

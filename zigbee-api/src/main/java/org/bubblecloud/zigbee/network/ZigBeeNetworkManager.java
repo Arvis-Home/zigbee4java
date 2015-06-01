@@ -30,7 +30,7 @@ import org.bubblecloud.zigbee.network.packet.af.AF_REGISTER;
 import org.bubblecloud.zigbee.network.packet.af.AF_REGISTER_SRSP;
 import org.bubblecloud.zigbee.network.packet.zdo.*;
 import org.bubblecloud.zigbee.network.port.ZigBeePort;
-import org.bubblecloud.zigbee.util.ObservableState;
+import org.bubblecloud.zigbee.lang.observe.ObservableState;
 
 import java.util.HashSet;
 
@@ -63,7 +63,7 @@ public interface ZigBeeNetworkManager {
 
     public abstract boolean addAnnunceListener(AnnounceListener listner);
 
-    public abstract boolean removeAnnunceListener(AnnounceListener listner);
+    public abstract boolean removeAnnounceListener(AnnounceListener listner);
 
     public abstract AF_REGISTER_SRSP sendAFRegister(AF_REGISTER request);
 
@@ -75,7 +75,7 @@ public interface ZigBeeNetworkManager {
 
     public abstract boolean removeAFMessageListener(ApplicationFrameworkMessageListener listner);
 
-    public abstract boolean addAFMessageListner(ApplicationFrameworkMessageListener listner);
+    public abstract boolean addAFMessageListener(ApplicationFrameworkMessageListener listner);
 
     /**
      * Send LQI request cluster and wait for its response<br />

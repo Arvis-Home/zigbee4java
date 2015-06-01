@@ -2,7 +2,7 @@ package org.bubblecloud.zigbee;
 
 import org.bubblecloud.zigbee.console.ZigBeeConsole;
 import org.bubblecloud.zigbee.network.port.ZigBeeSerialPortImpl;
-import org.bubblecloud.zigbee.util.LifecycleState;
+import org.bubblecloud.zigbee.util.lifecycle.LifecycleState;
 
 import java.io.File;
 import java.net.URI;

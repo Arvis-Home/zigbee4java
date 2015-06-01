@@ -492,7 +492,7 @@ public class ZigBeeEndpointImpl implements ZigBeeEndpoint, ApplicationFrameworkM
     private void m_addAFMessageListener() {
         if (listeners.isEmpty() && consumers.size() == 0) {
             logger.debug("Registered {} as {}", this, ApplicationFrameworkMessageListener.class.getName());
-            networkManager.addAFMessageListner(this);
+            networkManager.addAFMessageListener(this);
         } else {
             logger.debug("Skipped to registered {} as {}", this, ApplicationFrameworkMessageListener.class.getName());
             logger.trace(

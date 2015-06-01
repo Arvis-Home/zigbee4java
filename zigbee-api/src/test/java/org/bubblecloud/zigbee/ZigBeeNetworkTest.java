@@ -9,7 +9,7 @@ import org.bubblecloud.zigbee.network.model.DriverStatus;
 import org.bubblecloud.zigbee.network.model.NetworkMode;
 import org.bubblecloud.zigbee.network.port.ZigBeeNetworkManagerImpl;
 import org.bubblecloud.zigbee.network.port.ZigBeePort;
-import org.bubblecloud.zigbee.util.LifecycleState;
+import org.bubblecloud.zigbee.util.lifecycle.LifecycleState;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -17,6 +17,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.EnumSet;
+import java.util.concurrent.TimeUnit;
+
+import static org.bubblecloud.zigbee.util.concurrent.ZigBeeExecutor.zigBeeExecutor;
+
 
 /**
  * Test for ZigBeeNetworkManagerSerialImpl.
@@ -62,11 +66,17 @@ public abstract class ZigBeeNetworkTest {
 
         zigbeeNetwork.getDriverStatus().waitFor(DriverStatus.NETWORK_READY);
 
-        Thread.sleep(20000);
+        final Runnable shutdownTask = new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                zigbeeDiscoveryManager.shutdown();
+                zigbeeNetwork.shutdown();
+            }
+        };
 
-        zigbeeDiscoveryManager.shutdown();
-
-        zigbeeNetwork.shutdown();
+        zigBeeExecutor.schedule(shutdownTask, 20, TimeUnit.SECONDS);
     }
 
     @Test
