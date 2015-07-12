@@ -37,7 +37,6 @@ import org.bubblecloud.zigbee.util.ThreadUtils;
 import org.bubblecloud.zigbee.network.model.IEEEAddress;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -242,7 +241,7 @@ public class EndpointBuilder extends Observable<EndpointBuilderObserver> impleme
      * @since 0.6.0 - Revision 74
      */
     private boolean changedNetworkAddress(ZigBeeNodeImpl node, int nwk) {
-        throw new NotImplementedException();
+        throw new RuntimeException();
     }
 
     boolean inspectingNewEndpoint = false;
@@ -358,6 +357,11 @@ public class EndpointBuilder extends Observable<EndpointBuilderObserver> impleme
     }
 
     private ObservableState<EndpointBuilderState> state = new ObservableState<>(EndpointBuilderState.Idle);
+
+    public ObservableState<EndpointBuilderState> getState()
+    {
+        return state;
+    }
 
     private void refreshState() {
 

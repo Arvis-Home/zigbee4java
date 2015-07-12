@@ -84,6 +84,10 @@ public class ZigBeeApi extends Observable<ZigBeeApiObserver> implements Endpoint
      * The zigbee network.
      */
     private ZigBeeNetwork network;
+    /**
+     * Flag to reset the network on startup
+     */
+	private boolean resetNetwork = false;
 
     /**
      * Constructor to configure the port interface.
@@ -96,9 +100,13 @@ public class ZigBeeApi extends Observable<ZigBeeApiObserver> implements Endpoint
      */
     public ZigBeeApi(final ZigBeePort port, final int pan, final int channel,
             final EnumSet<DiscoveryMode> discoveryModes, final boolean resetNetwork) {
+
         super(ZigBeeApiObserver.class);
+
+    	this.resetNetwork = resetNetwork;
+
         networkManager = new ZigBeeNetworkManagerImpl(port,
-                NetworkMode.Coordinator, pan, channel, resetNetwork, 2500L);
+                NetworkMode.Coordinator, pan, channel, 2500L);
 
         discoveryManager = new ZigBeeDiscoveryManager(networkManager, discoveryModes);
     }
@@ -113,9 +121,13 @@ public class ZigBeeApi extends Observable<ZigBeeApiObserver> implements Endpoint
      */
     public ZigBeeApi(final ZigBeePort port, final int pan, final int channel,
                      final boolean resetNetwork, final EnumSet<DiscoveryMode> discoveryModes) {
+
         super(ZigBeeApiObserver.class);
 
-        networkManager   = new ZigBeeNetworkManagerImpl(port, NetworkMode.Coordinator, pan, channel, resetNetwork, 2500L);
+    	this.resetNetwork = resetNetwork;
+
+        networkManager = new ZigBeeNetworkManagerImpl(port, NetworkMode.Coordinator, pan, channel, 2500L);
+
         discoveryManager = new ZigBeeDiscoveryManager(networkManager, discoveryModes);
         network          = ApplicationFrameworkLayer.getAFLayer(networkManager).getZigBeeNetwork();
 
@@ -206,14 +218,33 @@ public class ZigBeeApi extends Observable<ZigBeeApiObserver> implements Endpoint
 	    }
     }
 
-
-
     /**
      * Starts up network manager, network, context and discovery manager.
      *
      * @return true if startup was success.
      */
     public void startup() {
+        networkManager.startup();
+
+        initializeNetwork(this.resetNetwork);
+    }
+
+    /**
+     * Initialize the zigbee hardware
+     */
+    public void initializeHardware() {
+        networkManager.startup();
+    }
+
+    /**
+     * Initializes the zigbee network.
+     * This is only required if the port is opened using initializeHardware
+     * @param resetNetwork true to reset the network to the current panid and channel
+     * @return
+     */
+    public void initializeNetwork(boolean resetNetwork) {
+        context.addDeviceListener(this);
+        networkManager.initializeZigBeeNetwork(resetNetwork);
 
         final ObservableState<DriverStatus> observableDriverStatus = networkManager.getDriverStatus();
 

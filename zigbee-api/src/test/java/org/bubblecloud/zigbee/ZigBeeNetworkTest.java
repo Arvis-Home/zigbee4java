@@ -1,6 +1,5 @@
 package org.bubblecloud.zigbee;
 
-import org.bubblecloud.zigbee.ZigBeeApi.Status;
 import org.bubblecloud.zigbee.api.Device;
 import org.bubblecloud.zigbee.api.cluster.general.OnOff;
 import org.bubblecloud.zigbee.network.discovery.ZigBeeDiscoveryManager;
@@ -42,8 +41,7 @@ public abstract class ZigBeeNetworkTest {
     public void testOpenNetwork() throws Exception {
 
         final ZigBeeNetworkManagerImpl zigbeeNetwork = new ZigBeeNetworkManagerImpl(
-                port, NetworkMode.Coordinator, 4951, 22,
-                false, 2500L);
+                port, NetworkMode.Coordinator, 4951, 22, 2500L);
         zigbeeNetwork.startup();
 
         zigbeeNetwork.getDriverStatus().waitFor(DriverStatus.NETWORK_READY);
@@ -56,8 +54,7 @@ public abstract class ZigBeeNetworkTest {
     public void testDiscoverNetwork() throws Exception {
 
         final ZigBeeNetworkManagerImpl zigbeeNetwork = new ZigBeeNetworkManagerImpl(
-                port, NetworkMode.Coordinator, 4951, 22,
-                false, 2500L);
+                port, NetworkMode.Coordinator, 4951, 22, 2500L);
 
         final ZigBeeDiscoveryManager zigbeeDiscoveryManager = new ZigBeeDiscoveryManager(zigbeeNetwork, DiscoveryMode.ALL);
 

@@ -140,13 +140,11 @@ public class ZigBeeDiscoveryManager extends AbstractLifecycleObject<ZigBeeDiscov
     }
 
     private boolean isInitialNetworkBrowsingComplete = false;
-    private boolean isInitialNetworkBrowsingComplete() { return isInitialNetworkBrowsingComplete; }
+    public boolean isInitialNetworkBrowsingComplete() { return isInitialNetworkBrowsingComplete; }
 
     private boolean refreshInitialNetworkBrowsingComplete() {
         return (associationNetworkBrowser == null || associationNetworkBrowser.isInitialNetworkBrowsingComplete())
-                && endpointBuilder.getState();
-
-
+                && (endpointBuilder.getState().get() == EndpointBuilderState.Ready);
     }
 
     @Override

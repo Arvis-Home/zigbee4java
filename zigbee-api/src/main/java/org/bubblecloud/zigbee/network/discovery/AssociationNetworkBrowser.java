@@ -33,6 +33,7 @@ import org.bubblecloud.zigbee.util.Integers;
 import org.bubblecloud.zigbee.network.ZigBeeNode;
 import org.bubblecloud.zigbee.util.TimePeriod;
 import org.bubblecloud.zigbee.util.lifecycle.AbstractLifecycleObject;
+import org.bubblecloud.zigbee.util.lifecycle.LifecycleState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +43,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-import static org.bubblecloud.zigbee.util.lifecycle.LifecycleState.*;
 
 /**
  * @author <a href="mailto:stefano.lenzi@isti.cnr.it">Stefano "Kismet" Lenzi</a>
@@ -156,7 +156,7 @@ public class AssociationNetworkBrowser extends AbstractLifecycleObject<Associati
             initialNetworkBrowsingComplete = true;
             getObserverNotifier().onInitialNetworkBrowsingComplete();
 
-            if(!(getState()==Stopping)) {
+            if(!getState().is(LifecycleState.Stopping)) {
                 logger.debug("Network browsing completed, waiting until {}", NetworkBrowsingInterval.toString());
                 networkBrowsingFuture = scheduledExecutor.scheduleWithFixedDelay( networkBrowsingTask, 0, NetworkBrowsingInterval.units, NetworkBrowsingInterval.timeUnit);
             }

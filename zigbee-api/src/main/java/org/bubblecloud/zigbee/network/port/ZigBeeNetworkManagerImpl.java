@@ -21,6 +21,7 @@
  */
 package org.bubblecloud.zigbee.network.port;
 
+import org.bubblecloud.zigbee.lang.observe.StateChangeObserver;
 import org.bubblecloud.zigbee.network.*;
 import org.bubblecloud.zigbee.network.packet.*;
 import org.bubblecloud.zigbee.network.packet.af.*;
@@ -54,6 +55,7 @@ import java.util.Observer;
  * @author <a href="mailto:manlio.bacco@isti.cnr.it">Manlio Bacco</a>
  * @author <a href="mailto:tommi.s.e.laukkanen@gmail.com">Tommi S.E. Laukkanen</a>
  * @author <a href="mailto:christopherhattonuk@gmail.com">Chris Hatton</a>
+ * @author <a href="mailto:chris@cd-jackson.com">Chris Jackson</a>
  */
 public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
 {
@@ -62,6 +64,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
 
     public static final int DEFAULT_TIMEOUT = 5000;
     public static final String TIMEOUT_KEY = "zigbee.driver.cc2530.timeout";
+
+    public static final int RESET_TIMEOUT_DEFAULT = 60000;
+    public static final String RESET_TIMEOUT_KEY = "zigbee.driver.cc2530.reset.timeout";
 
     public static final int STARTUP_TIMEOUT_DEFAULT = 5000;
     public static final String STARTUP_TIMEOUT_KEY = "zigbee.driver.cc2530.startup.timeout";
@@ -76,6 +81,7 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     public static final String RESEND_ONLY_EXCEPTION_KEY = "zigbee.driver.cc2530.resend.exceptionally";
 
     private final int TIMEOUT;
+    private final int RESET_TIMEOUT;
     private final int STARTUP_TIMEOUT;
     private final int RESEND_TIMEOUT;
     private final int RESEND_MAX_RETRY;
@@ -84,12 +90,11 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     private ZigBeeInterface zigbeeInterface;
     private ZigBeePort port;
 
-    private ObservableState<DriverStatus> driverStatus = new ObservableState<>();
+    private ObservableState<DriverStatus> driverStatus = new ObservableState<>(DriverStatus.CLOSED);
 
     private NetworkMode mode;
     private short pan;
     private byte channel;
-    private boolean cleanStatus;
 
     private final HashSet<AnnounceListener> announceListeners = new HashSet<AnnounceListener>();
     private final AnnounceListenerFilter announceListenerFilter = new AnnounceListenerFilter(announceListeners);
@@ -100,18 +105,15 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     private long ieeeAddress = -1;
     private final HashMap<Class<?>, Thread> conversation3Way = new HashMap<Class<?>, Thread>();
 
-    public ZigBeeNetworkManagerImpl(ZigBeePort port, NetworkMode mode, int pan, int channel,
-									boolean cleanNetworkStatus, long timeout) {
+    public ZigBeeNetworkManagerImpl(ZigBeePort port, NetworkMode mode, int pan, int channel, long timeout) {
 
-        final Observer stateObserver = new Observer()
+        final StateChangeObserver<DriverStatus> stateObserver = new StateChangeObserver<DriverStatus>()
         {
             private DriverStatus oldStatus;
 
             @Override
-            public void update(final Observable o, final Object newStatusObj)
+            public void onStateChanged(final DriverStatus newStatus)
             {
-                DriverStatus newStatus = (DriverStatus) newStatusObj;
-
                 logger.trace("{} -> {}", oldStatus, newStatus);
 
                 if(newStatus == DriverStatus.HARDWARE_READY)
@@ -122,6 +124,7 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
                 oldStatus = newStatus;
             }
         };
+
         driverStatus.addObserver(stateObserver);
 
         int aux = RESEND_TIMEOUT_DEFAULT;
@@ -141,6 +144,15 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
             logger.trace("Using TIMEOUT set as DEFAULT {}ms", aux);
         }
         TIMEOUT = aux;
+
+        aux = (int) Math.max(RESET_TIMEOUT_DEFAULT, timeout);
+        try {
+            aux = Integer.parseInt(System.getProperty(RESET_TIMEOUT_KEY));
+            logger.trace("Using RESET_TIMEOUT set from enviroment {}", aux);
+        } catch (NumberFormatException ex) {
+            logger.trace("Using RESET_TIMEOUT set as DEFAULT {}ms", aux);
+        }
+        RESET_TIMEOUT = aux;
 
         aux = (int) Math.max(STARTUP_TIMEOUT_DEFAULT, timeout);
         try {
@@ -168,8 +180,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
             logger.trace("Using RESEND_MAX_RETRY set as DEFAULT {}", aux);
         }
         RESEND_ONLY_EXCEPTION = b;
+
         driverStatus.set(DriverStatus.CLOSED);
-        this.cleanStatus = cleanNetworkStatus;
+
         setPort(port);
         setZigBeeNetwork((byte) channel, (short) pan);
         setZigBeeNodeMode(mode);
@@ -184,14 +197,23 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
                 driverStatus.set(DriverStatus.HARDWARE_READY);
             } else {
                 shutdown();
-                return;
             }
 
             logger.trace("Initializing network.");
             driverStatus.set(DriverStatus.NETWORK_INITIALIZING);
-            if (!initializeZigBeeNetwork()) {
+            if (!initializeZigBeeNetwork(false)) {
                 shutdown();
             }
+
+            // Now reset the dongle
+                driverStatus.set(DriverStatus.HARDWARE_OPEN);
+            if (!dongleReset()) {
+                logger.error("Unable to reset dongle");
+                shutdown();
+            }
+
+            driverStatus.set(DriverStatus.HARDWARE_READY);
+
         } else {
             throw new IllegalStateException("Driver already opened, current state is:" + driverStatus);
         }
@@ -211,6 +233,7 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
                 break;
 
             case NETWORK_INITIALIZING:
+            case HARDWARE_OPEN:
             case HARDWARE_READY:
                 logger.trace("Closing HARDWARE");
                 zigbeeInterface.close();
@@ -228,26 +251,30 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
             logger.error("Failed to initialize the dongle on port {}.", port);
             return false;
         }
-        if (!dongleReset()) {
-            logger.error("Unable to reset dongle");
-            return false;
-        }
 
         return true;
     }
 
-    private boolean initializeZigBeeNetwork() {
+    public boolean initializeZigBeeNetwork(boolean cleanStatus) {
+    	// And finally initialise the network
+        logger.trace("Initializing network.");
+
+        driverStatus.set(DriverStatus.NETWORK_INITIALIZING);
+
         if (cleanStatus) {
             if (!configureZigBeeNetwork()) {
+                shutdown();
                 return false;
             }
         }
         if (!createZigBeeNetwork()) {
             logger.error("Failed to start zigbee network.");
+            shutdown();
             return false;
         }
         if (checkZigBeeNetworkConfiguration()) {
             logger.error("Dongle configuration does not match the specified configuration.");
+            shutdown();
             return false;
         }
         return true;
@@ -255,19 +282,8 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
 
     private boolean createZigBeeNetwork() {
         createCustomDevicesOnDongle();
-        switch (mode) {
-            case Coordinator:
-                logger.debug("Creating network as coordinator.");
-            break;
+        logger.debug("Creating network as {}", mode.toString());
 
-            case Router:
-                logger.debug("Creating network as router.");
-            break;
-
-            case EndDevice:
-                logger.debug("Creating network as end device.");
-            break;
-        }
         final int ALL_CLUSTERS = 0xFFFF;
 
         logger.trace("Reset seq: Trying MSG_CB_REGISTER");
@@ -283,7 +299,10 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
         ZDO_STARTUP_FROM_APP_SRSP response = (ZDO_STARTUP_FROM_APP_SRSP) sendSynchrouns(
 				zigbeeInterface, new ZDO_STARTUP_FROM_APP(INSTANT_STARTUP), STARTUP_TIMEOUT
         );
-        if (response == null) return false;
+        if (response == null) {
+        	return false;
+        }
+        
         switch (response.Status) {
             case 0: {
                 logger.info("Initialized ZigBee network with existing network driverStatus.");
@@ -542,7 +561,6 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
             throw new IllegalStateException("Network mode can be changed only " +
                     "if driver is CLOSED while it is:" + driverStatus);
         }
-//        cleanStatus = mode != m;
         mode = m;
     }
 
@@ -551,7 +569,6 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
             throw new IllegalStateException("Network mode can be changed only " +
                     "if driver is CLOSED while it is:" + driverStatus);
         }
-        //cleanStatus = ch != channel || panId != pan;
         channel = ch;
         pan = panId;
     }
@@ -570,7 +587,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public <REQUEST extends ZToolPacket, RESPONSE extends ZToolPacket> RESPONSE sendLocalRequest(REQUEST request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         RESPONSE result = (RESPONSE) sendSynchrouns(zigbeeInterface, request);
         if (result == null) {
             logger.error("{} timed out waiting for synchronous local response.", request.getClass().getSimpleName());
@@ -579,7 +598,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public <REQUEST extends ZToolPacket, RESPONSE extends ZToolPacket> RESPONSE sendRemoteRequest(REQUEST request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         RESPONSE result = null;
 
         waitAndLock3WayConversation(request);
@@ -601,7 +622,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
 
     public ZDO_MGMT_LQI_RSP sendLQIRequest(ZDO_MGMT_LQI_REQ request) {
 
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         ZDO_MGMT_LQI_RSP result = null;
 
         waitAndLock3WayConversation(request);
@@ -620,7 +643,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public ZDO_IEEE_ADDR_RSP sendZDOIEEEAddressRequest(ZDO_IEEE_ADDR_REQ request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         ZDO_IEEE_ADDR_RSP result = null;
 
         waitAndLock3WayConversation(request);
@@ -639,7 +664,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public ZDO_NODE_DESC_RSP sendZDONodeDescriptionRequest(ZDO_NODE_DESC_REQ request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         ZDO_NODE_DESC_RSP result = null;
 
         waitAndLock3WayConversation(request);
@@ -657,7 +684,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public ZDO_ACTIVE_EP_RSP sendZDOActiveEndPointRequest(ZDO_ACTIVE_EP_REQ request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         ZDO_ACTIVE_EP_RSP result = null;
 
         waitAndLock3WayConversation(request);
@@ -676,7 +705,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public ZDO_MGMT_PERMIT_JOIN_RSP sendPermitJoinRequest(ZDO_MGMT_PERMIT_JOIN_REQ request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         ZDO_MGMT_PERMIT_JOIN_RSP result = null;
 
         waitAndLock3WayConversation(request);
@@ -809,7 +840,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public ZDO_SIMPLE_DESC_RSP sendZDOSimpleDescriptionRequest(ZDO_SIMPLE_DESC_REQ request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         ZDO_SIMPLE_DESC_RSP result = null;
         waitAndLock3WayConversation(request);
         final WaitForCommand waiter = new WaitForCommand(ZToolCMD.ZDO_SIMPLE_DESC_RSP, zigbeeInterface);
@@ -894,7 +927,7 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
         }
 
         SYS_RESET_RESPONSE response =
-                (SYS_RESET_RESPONSE) waiter.getCommand(TIMEOUT);
+                (SYS_RESET_RESPONSE) waiter.getCommand(RESET_TIMEOUT);
 
         return response != null;
     }
@@ -1093,14 +1126,18 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public AF_REGISTER_SRSP sendAFRegister(AF_REGISTER request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
 
         AF_REGISTER_SRSP response = (AF_REGISTER_SRSP) sendSynchrouns(zigbeeInterface, request);
         return response;
     }
 
     public AF_DATA_CONFIRM sendAFDataRequest(AF_DATA_REQUEST request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         AF_DATA_CONFIRM result = null;
 
         waitAndLock3WayConversation(request);
@@ -1118,7 +1155,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public ZDO_BIND_RSP sendZDOBind(ZDO_BIND_REQ request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         ZDO_BIND_RSP result = null;
 
         waitAndLock3WayConversation(request);
@@ -1135,7 +1174,9 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
     }
 
     public ZDO_UNBIND_RSP sendZDOUnbind(ZDO_UNBIND_REQ request) {
-        if (waitForNetwork() == false) return null;
+        if (waitForNetwork() == false) {
+        	return null;
+        }
         ZDO_UNBIND_RSP result = null;
 
         waitAndLock3WayConversation(request);
@@ -1259,7 +1300,7 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
      * @since 0.2.0
      */
     public int getCurrentPanId() {
-        if (waitForNetwork() == false) {
+        if (waitForHardware() == false) {
             logger.info("Failed to reach the {} level: getCurrentPanId() failed", DriverStatus.NETWORK_READY);
             return -1;
         }
@@ -1278,7 +1319,7 @@ public class ZigBeeNetworkManagerImpl implements ZigBeeNetworkManager
      * @since 0.2.0
      */
     public int getCurrentChannel() {
-        if (waitForNetwork() == false) {
+        if (waitForHardware() == false) {
             logger.info("Failed to reach the {} level: getCurrentChannel() failed", DriverStatus.NETWORK_READY);
             return -1;
         }
