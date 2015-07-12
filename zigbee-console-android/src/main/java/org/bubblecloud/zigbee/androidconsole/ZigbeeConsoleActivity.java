@@ -1,75 +1,52 @@
 package org.bubblecloud.zigbee.androidconsole;
 
-import android.support.v7.app.ActionBarActivity;
-import android.support.v7.app.ActionBar;
-import android.support.v4.app.Fragment;
+import android.app.Activity;
+import android.content.Context;
+import android.hardware.usb.UsbManager;
 import android.os.Bundle;
-import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuItem;
-import android.view.View;
-import android.view.ViewGroup;
-import android.os.Build;
+import android.widget.EditText;
+import android.widget.TextView;
+
+import org.bubblecloud.zigbee.ZigBeeConsole;
+import org.bubblecloud.zigbee.androidconsole.io.EditTextInputStream;
+import org.bubblecloud.zigbee.androidconsole.io.ScrollingLogTextViewOutputStream;
+import org.bubblecloud.zigbee.androidconsole.ui.ScrollingLogTextView;
+import org.bubblecloud.zigbee.network.port.AndroidUsbSerialPort;
 
 
-public class ZigbeeConsoleActivity extends ActionBarActivity
+public class ZigbeeConsoleActivity extends Activity
 {
+    private static final int
+            Zigbee_Channel = 11,
+            Zigbee_PAN_ID  = 4952;
+
+    private EditText             editText;
+    private ScrollingLogTextView logText;
+
+    private EditTextInputStream              inputStream;
+    private ScrollingLogTextViewOutputStream outputStream;
+    private ZigBeeConsole console;
 
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
         super.onCreate(savedInstanceState);
+
         setContentView(R.layout.activity_zigbee_console);
-        if(savedInstanceState == null)
-        {
-            getSupportFragmentManager().beginTransaction()
-                    .add(R.id.container, new PlaceholderFragment())
-                    .commit();
-        }
-    }
 
+        editText = (EditText)            (findViewById(R.id.consoleInputEditText));
+        logText  = (ScrollingLogTextView)(findViewById(R.id.consoleOutputTextView));
 
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu)
-    {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_zigbee_console, menu);
-        return true;
-    }
+        logText.setText("");
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item)
-    {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
+        inputStream  = new EditTextInputStream(editText);
+        outputStream = new ScrollingLogTextViewOutputStream(logText);
 
-        //noinspection SimplifiableIfStatement
-        if(id == R.id.action_settings)
-        {
-            return true;
-        }
+        final UsbManager usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
+        final AndroidUsbSerialPort usbSerialPort = new AndroidUsbSerialPort(usbManager, this);
 
-        return super.onOptionsItemSelected(item);
-    }
+        console = new ZigBeeConsole(usbSerialPort, Zigbee_PAN_ID, Zigbee_Channel, false, inputStream, outputStream);
 
-    /**
-     * A placeholder fragment containing a simple view.
-     */
-    public static class PlaceholderFragment extends Fragment
-    {
-
-        public PlaceholderFragment()
-        {
-        }
-
-        @Override
-        public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                                 Bundle savedInstanceState)
-        {
-            View rootView = inflater.inflate(R.layout.fragment_zigbee_console, container, false);
-            return rootView;
-        }
+        console.start();
     }
 }

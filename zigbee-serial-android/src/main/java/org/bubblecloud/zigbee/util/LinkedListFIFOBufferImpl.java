@@ -1,5 +1,6 @@
 package org.bubblecloud.zigbee.util;
 
+import java.lang.reflect.Array;
 import java.util.LinkedList;
 
 /**
@@ -9,14 +10,14 @@ import java.util.LinkedList;
  * - Less memory efficient by a factor of at least 3 (each byte resides in the node of a LinkedList)
  * @author <a href="mailto:christopherhattonuk@gmail.com">Chris Hatton</a>
  */
-public class LinkedListFIFOByteBufferImpl implements FIFOByteBuffer
+public class LinkedListFIFOBufferImpl<T> implements FIFOBuffer<T>
 {
     private final Object mutex = new Object();
 
-    private LinkedList<Byte> buffer = new LinkedList<Byte>();
+    private LinkedList<T> buffer = new LinkedList<T>();
 
     @Override
-    public void push(byte value)
+    public void push(T value)
     {
         synchronized (mutex)
         {
@@ -25,17 +26,17 @@ public class LinkedListFIFOByteBufferImpl implements FIFOByteBuffer
     }
 
     @Override
-    public void pushAll(byte[] values)
+    public void pushAll(T[] values)
     {
         synchronized (mutex)
         {
-            for (byte value : values)
+            for (T value : values)
                 buffer.add(value);
         }
     }
 
     @Override
-    public byte pop()
+    public T pop()
     {
         synchronized (mutex)
         {
@@ -44,17 +45,18 @@ public class LinkedListFIFOByteBufferImpl implements FIFOByteBuffer
     }
 
     @Override
-    public byte[] popAll()
+    @SuppressWarnings("unchecked")
+    public T[] popAll()
     {
         synchronized (mutex)
         {
-            byte[] all = new byte[buffer.size()];
+            Object[] all = new Object[buffer.size()];
             int i = 0;
-            for (byte value : buffer)
+            for (T value : buffer)
                 all[++i] = value;
 
             buffer.clear();
-            return all;
+            return (T[])all;
         }
     }
 

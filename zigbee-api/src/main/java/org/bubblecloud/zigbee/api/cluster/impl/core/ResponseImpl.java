@@ -105,7 +105,7 @@ public class ResponseImpl implements Response {
                 DefaultResponse defaultResponse = new DefaultResponseImpl(response);
                 throw new ZigBeeClusterException(
                         "Expected SpecificCommandFrame (" + expectedCommandId + ") but received a DefaultResponse"
-                                + "\nSTATUS:" + defaultResponse.getStatus() + " CMD:" + defaultResponse.getCommandId()
+                                + System.lineSeparator() + "STATUS:" + defaultResponse.getStatus() + " CMD:" + defaultResponse.getCommandId()
                         , response);
             }
             throw new ZigBeeClusterException(
@@ -129,7 +129,7 @@ public class ResponseImpl implements Response {
                 DefaultResponse defaultResponse = new DefaultResponseImpl(response);
                 throw new ZigBeeClusterException(
                         "Expected GeneralCommandFrame (" + expectedCommandId + ") but received a DefaultResponse"
-                                + "\nSTATUS:" + defaultResponse.getStatus() + " CMD:" + defaultResponse.getCommandId()
+                                + System.lineSeparator() + "STATUS:" + defaultResponse.getStatus() + " CMD:" + defaultResponse.getCommandId()
                         , response);
             }
             throw new ZigBeeClusterException(

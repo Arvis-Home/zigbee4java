@@ -62,12 +62,12 @@ public abstract class DeviceFactoryBase implements DeviceFactory {
             if (clusters == null) {
                 try {
                     final int[] standard = (int[]) refinement.getDeclaredField("STANDARD").get(null);
-                    final int[] custom = (int[]) refinement.getDeclaredField("CUSTOM").get(null);
+                    final int[] custom   = (int[]) refinement.getDeclaredField("CUSTOM").get(null);
                     clusters = ArraysUtil.append(standard, custom);
                 } catch (Exception e) {
                     logger.error(
                             "Unable to retrieve the implemented clusters by means of the reflection, "
-                                    + "the class {} does not provide the static field STANDARD or CUSTOM.\n"
+                                    + "the class {} does not provide the static field STANDARD or CUSTOM." + System.lineSeparator()
                                     + "Please modify the source code of the class by adding such static field or"
                                     + "override the getDeviceClusters() method ", refinement.getName()
                     );

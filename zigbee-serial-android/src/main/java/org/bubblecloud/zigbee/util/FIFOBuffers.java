@@ -5,7 +5,7 @@ package org.bubblecloud.zigbee.util;
  */
 public class FIFOBuffers
 {
-    public static int popInto(FIFOByteBuffer source, byte[] destination)
+    public static <T> int popInto(FIFOBuffer<T> source, T[] destination)
     {
         int i=0;
         while(source.size()>0 && i<destination.length)

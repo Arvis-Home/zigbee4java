@@ -39,134 +39,221 @@ import java.util.*;
  * @author <a href="mailto:chris@cd-jackson.com">Chris Jackson</a>
  */
 public final class ZigBeeConsole {
+
+    public static interface Observer {
+        void didChangeState(State state);
+    }
+
+    private enum State {
+        Stopped,
+        Starting,
+        Started,
+        Stopping
+    }
+
+    public static final class ConsoleLifeCycleException extends RuntimeException {
+        public ConsoleLifeCycleException(String description) {
+            super(description);
+        }
+    }
+
+    private static final String NetworkStateFileName = "network.json";
+
+    private State state = State.Stopped;
+    private ZigBeeApi zigbeeApi;
+
     /**
      * The main thread.
      */
-    private Thread mainThread = null;
-
-    /**
-     * The flag reflecting that shutdown is in process.
-     */
-    private boolean shutdown = false;
+    private Thread consoleThread = null;
 
     /**
      * Map of registered commands and their implementations.
      */
-    private Map<String, ConsoleCommand> commands = new HashMap<String, ConsoleCommand>();
+    private final Map<String, ConsoleCommand> commands = new HashMap<String, ConsoleCommand>();
 
-	private ZigBeePort port;
-	private int pan;
-	private int channel;
-	private boolean resetNetwork;
-	
-	public ZigBeeConsole(ZigBeePort port, int pan, int channel, boolean resetNetwork) {
+	private final ZigBeePort port;
+	private final int pan, channel;
+	private final boolean resetNetwork;
+    private final File networkStateFile;
+
+    private  InputStream inputStream;
+    private  PrintStream printStream;
+
+    private final Set<Observer> observers = new HashSet<>();
+
+	public ZigBeeConsole(ZigBeePort port, int pan, int channel, boolean resetNetwork, InputStream inputStream, OutputStream outputStream) {
 		this.port         = port;
 		this.pan          = pan;
 		this.channel      = channel;
 		this.resetNetwork = resetNetwork;
+        this.inputStream  = inputStream;
+        this.printStream  = new PrintStream(outputStream);
+        this.bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
 
-		commands.put("quit", 		new QuitCommand());
-		commands.put("help", 		new HelpCommand());
-		commands.put("list", 		new ListCommand());
-		commands.put("nodes", 		new NodesCommand());
-		commands.put("desc", 		new DescribeCommand());
-		commands.put("bind", 		new BindCommand());
-		commands.put("unbind", 		new UnbindCommand());
-		commands.put("on", 			new OnCommand());
-		commands.put("off", 		new OffCommand());
-		commands.put("color",		new ColorCommand());
-		commands.put("level", 		new LevelCommand());
-		commands.put("listen", 	    new ListenCommand());
-		commands.put("unlisten",    new UnlistenCommand());
-		commands.put("subscribe", 	new SubscribeCommand());
-		commands.put("unsubscribe", new UnsubscribeCommand());
-		commands.put("read", 		new ReadCommand());
-		commands.put("write", 		new WriteCommand());
-		commands.put("join",        new JoinCommand());
-		commands.put("lqi", 		new LqiCommand());
+        networkStateFile = new File(NetworkStateFileName);
+
+        initCommandList();
 	}
+
+    private void initCommandList() {
+        commands.put("quit", 		new QuitCommand());
+        commands.put("help", 		new HelpCommand());
+        commands.put("list", 		new ListCommand());
+        commands.put("desc", 		new DescribeCommand());
+        commands.put("bind", 		new BindCommand());
+        commands.put("unbind", 		new UnbindCommand());
+        commands.put("on", 			new OnCommand());
+        commands.put("off", 		new OffCommand());
+        commands.put("color",		new ColorCommand());
+        commands.put("level", 		new LevelCommand());
+        commands.put("listen", 	    new ListenCommand());
+        commands.put("unlisten",    new UnlistenCommand());
+        commands.put("subscribe", 	new SubscribeCommand());
+        commands.put("unsubscribe", new UnsubscribeCommand());
+        commands.put("read", 		new ReadCommand());
+        commands.put("write", 		new WriteCommand());
+        commands.put("join",        new JoinCommand());
+        commands.put("lqi", 		new LqiCommand());
+    }
+
+    public final void addObserver(Observer observer) {
+        observers.add(observer);
+    }
+
+    public final boolean removeObserver(Observer observer) {
+        return observers.remove(observer);
+    }
 
 	/**
      * Starts this console application
      */
     public void start() {
-        mainThread = Thread.currentThread();
-        System.out.print("ZigBee API starting up...");
-        final EnumSet<DiscoveryMode> discoveryModes = DiscoveryMode.ALL;
-        //discoveryModes.remove(DiscoveryMode.LinkQuality);
-        final ZigBeeApi zigbeeApi = new ZigBeeApi(port, pan, channel, resetNetwork, discoveryModes);
 
-        final File networkStateFile = new File("network.json");
-        if (networkStateFile.exists()) {
-            try {
-                final String networkState = FileUtils.readFileToString(networkStateFile);
-                zigbeeApi.deserializeNetworkState(networkState);
-            } catch (final Exception e) {
-                e.printStackTrace();
-                // Fall through and just start the network without persistence
-            }
-        }
-
-        if (!zigbeeApi.startup()) {
-            print("ZigBee API starting up ... [FAIL]");
-            return;
-        } else {
-            print("ZigBee API starting up ... [OK]");
-        }
-
-        zigbeeApi.addDeviceListener(new DeviceListener() {
-            @Override
-            public void deviceAdded(Device device) {
-                print("Device added: " + device.getEndpointId() + " (#" + device.getNetworkAddress() + ")");
-            }
-
-            @Override
-            public void deviceUpdated(Device device) {
-                print("Device updated: " + device.getEndpointId() + " (#" + device.getNetworkAddress() + ")");
-            }
-
-            @Override
-            public void deviceRemoved(Device device) {
-                print("Device removed: " + device.getEndpointId() + " (#" + device.getNetworkAddress() + ")");
-            }
-        });
-
-        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+        final Runnable consoleThreadMain = new Runnable() {
             @Override
             public void run() {
-                shutdown = true;
-                try {
-                    System.in.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                setState(State.Starting);
+
+                printStream.print("ZigBee API starting up...");
+                final EnumSet<DiscoveryMode> discoveryModes = DiscoveryMode.ALL;
+                //discoveryModes.remove(DiscoveryMode.LinkQuality);
+                zigbeeApi = new ZigBeeApi(port, pan, channel, resetNetwork, discoveryModes);
+
+                if (networkStateFile.exists()) {
+                    try {
+                        final String networkState = FileUtils.readFileToString(networkStateFile);
+                        zigbeeApi.deserializeNetworkState(networkState);
+                    } catch (final Exception e) {
+                        e.printStackTrace();
+                        // Fall through and just start the network without persistence
+                    }
                 }
-                try {
-                    mainThread.interrupt();
-                    mainThread.join();
-                } catch (InterruptedException e) {
-                    return;
+                
+                //Seemed to be removed by merge, verify and clean up
+
+                //if (!zigbeeApi.startup()) {
+                //    print("ZigBee API starting up ... [FAIL]");
+                //    return;
+                //} else {
+                //    print("ZigBee API starting up ... [OK]");
+                //}
+            
+
+                // TODO Use something like a command line parameter to decide if permit join is re-enabled
+                // Lets disable the join functionality in console by default to improve security.
+        /*if (!zigbeeApi.permitJoin(true)) {
+            print("ZigBee API permit join enable ... [FAIL]");
+        } else {
+            print("ZigBee API permit join enable ... [OK]");
+        }*/
+
+                zigbeeApi.addDeviceListener(new DeviceListener()
+                {
+                    @Override
+                    public void deviceAdded(Device device)
+                    {
+                        print("Device added: " + device.getEndpointId() + " (#" + device.getNetworkAddress() + ")");
+                    }
+
+                    @Override
+                    public void deviceUpdated(Device device)
+                    {
+                        print("Device updated: " + device.getEndpointId() + " (#" + device.getNetworkAddress() + ")");
+                    }
+
+                    @Override
+                    public void deviceRemoved(Device device)
+                    {
+                        print("Device removed: " + device.getEndpointId() + " (#" + device.getNetworkAddress() + ")");
+                    }
+                });
+
+                Runtime.getRuntime().addShutdownHook(new Thread(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+
+                        if(state == State.Started)
+                        {
+                            state = State.Stopping;
+                        }
+
+                        try
+                        {
+                            inputStream.close();
+                        }
+                        catch(IOException e)
+                        {
+                            e.printStackTrace();
+                        }
+                        try
+                        {
+                            consoleThread.interrupt();
+                            consoleThread.join();
+
+                            setState(State.Stopped);
+                        }
+                        catch(InterruptedException e)
+                        {
+                            return;
+                        }
+                    }
+                }));
+
+                printStream.print("Browsing network for the first time...");
+                while (!(state==State.Stopping) && !networkStateFile.exists() && !zigbeeApi.isInitialBrowsingComplete()) {
+
+                    printStream.print('.');
+                    try {
+                        Thread.sleep(250);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
                 }
+                printStream.println("[OK]");
+
+                print("There are " + zigbeeApi.getDevices().size() + " known devices in the network.");
+
+                print("ZigBee console ready.");
+
+                String inputLine;
+                while (!(state==State.Stopping) && (inputLine = readLine()) != null) {processInputLine(inputLine);
+                }
+
+                stop();
             }
-        }));
+        };
 
-        while (!shutdown && !networkStateFile.exists() && !zigbeeApi.isInitialBrowsingComplete()) {
-            print("Browsing network for the first time...");
-            System.out.print('.');
-            try {
-                Thread.sleep(250);
-            } catch (InterruptedException e) {
-                break;
-            }
-            print("Browsing network for the first time... [OK]");
-        }
-        print("There are " + zigbeeApi.getDevices().size() + " known devices in the network.");
+        consoleThread = new Thread(consoleThreadMain);
 
-        print("ZigBee console ready.");
+        consoleThread.start();
+    }
 
-        String inputLine;
-        while (!shutdown && (inputLine = readLine()) != null) {
-            processInputLine(zigbeeApi, inputLine);
-        }
+    public void stop() {
+
+        setState(State.Stopping);
 
         zigbeeApi.shutdown();
 
@@ -175,14 +262,41 @@ public final class ZigBeeConsole {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        zigbeeApi = null;
+    }
+
+    /**
+     * Enforces the linear lifecycle of the Console and broadcasts step-changes to observers
+     * @param state
+     */
+    private void setState(final State state)
+    {
+        final State[] states = State.values();
+        final State nextState = states[(this.state.ordinal()+1)%states.length];
+
+        if(state!=nextState) {
+            throw new ConsoleLifeCycleException("Invalid state set! Currently "+this.state.toString()+", expected "+nextState.toString()+", attempted "+state.toString());
+        }
+        else {
+            this.state = state;
+            for(Observer observer : observers) {
+                observer.didChangeState(this.state);
+            }
+        }
     }
 
     /**
      * Processes text input line.
-     * @param zigbeeApi the ZigBee API
+     * This ZigBeeConsole must be in started state before calling this method.
+     * Calling this when not in started state will cause a RuntimeException to be thrown.
      * @param inputLine the input line
      */
-    private void processInputLine(final ZigBeeApi zigbeeApi, final String inputLine) {
+    public void processInputLine(final String inputLine) {
+        if(zigbeeApi==null) {
+            throw new RuntimeException("Attempted to process input line before this console was started.");
+        }
+
         if (inputLine.length() == 0) {
             return;
         }
@@ -224,8 +338,8 @@ public final class ZigBeeConsole {
      *
      * @param line the line
      */
-    private static void print(final String line) {
-        System.out.println("\r" + line);
+    private void print(final String line) {
+        printStream.println(System.lineSeparator() + line);
     }
 
     /**
@@ -234,14 +348,24 @@ public final class ZigBeeConsole {
      * @return line readLine from console or null if exception occurred.
      */
     private String readLine() {
-        System.out.print("\r> ");
+        String inputLine = "";
+        printStream.print(System.lineSeparator()+"> ");
         try {
-            final BufferedReader bufferRead = new BufferedReader(new InputStreamReader(System.in));
-            final String inputLine = bufferRead.readLine();
-            return inputLine;
+
+            inputLine = bufferedReader.readLine();
+
+            //int c;
+            //while((c=inputStream.read())!='\n')
+            //{
+            //    inputLine += (char)c;
+            //}
+
+            //inputLine = bufferRead.readLine();
         } catch(final IOException e) {
-            return null;
+            inputLine = null;
         }
+
+        return inputLine;
     }
 
     /**
@@ -305,7 +429,8 @@ public final class ZigBeeConsole {
          * {@inheritDoc}
          */
         public boolean process(final ZigBeeApi zigbeeApi, final String[] args) {
-            shutdown = true;
+            assert state==State.Started;
+            state = State.Stopping;
             return true;
         }
     }
@@ -334,9 +459,9 @@ public final class ZigBeeConsole {
             if (args.length == 2) {
                 if (commands.containsKey(args[1])) {
                     final ConsoleCommand command = commands.get(args[1]);
-                    System.out.println(command.getDescription());
-                    System.out.println("");
-                    System.out.println("Syntax: " + command.getSyntax());
+                    printStream.println(command.getDescription());
+                    printStream.println("");
+                    printStream.println("Syntax: " + command.getSyntax());
                 } else {
                     return false;
                 }
@@ -378,7 +503,7 @@ public final class ZigBeeConsole {
             final List<Device> devices = zigbeeApi.getDevices();
             for (int i = 0; i < devices.size(); i++) {
                 final Device device = devices.get(i);
-                System.out.println(i + ") " + device.getEndpointId() +
+                printStream.println(i + ") " + device.getEndpointId() +
                 		" [" + device.getNetworkAddress() + "]" +
                 		" : " + device.getDeviceType());
             }
@@ -1325,7 +1450,7 @@ public final class ZigBeeConsole {
     /**
      * Anonymous class report listener implementation which prints the reports to console.
      */
-    private static ReportListener consoleReportListener = new ReportListener() {
+    private ReportListener consoleReportListener = new ReportListener() {
         @Override
         public void receivedReport(final String endPointId, final short clusterId,
                                    final Dictionary<Attribute, Object> reports) {
@@ -1338,4 +1463,23 @@ public final class ZigBeeConsole {
         }
     };
 
+
+    //public InputStream getInputStream() {
+    //    return inputStream;
+    //}
+
+    BufferedReader bufferedReader = null;
+
+    //public void setInputStream(InputStream inputStream) {
+    //    bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+    //    this.inputStream = inputStream;
+    //}
+//
+    //public PrintStream getPrintStream() {
+    //    return printStream;
+    //}
+//
+    //public void setPrintStream(PrintStream printStream) {
+    //    this.printStream = printStream;
+    //}
 }

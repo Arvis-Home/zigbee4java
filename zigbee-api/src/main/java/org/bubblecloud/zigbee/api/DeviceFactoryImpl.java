@@ -78,7 +78,7 @@ public class DeviceFactoryImpl extends DeviceFactoryBase {
             logger.error(
                     "Unable to retrive the implemented the DeviceId refined by this driver"
                             + " by means of the reflection, the class {} does not provide the static "
-                            + "field DEVICE_ID.\n"
+                            + "field DEVICE_ID." + System.lineSeparator()
                             + "Please modify the source code of the class by adding such static field or"
                             + "implement a proper {} class",
                     cInterface.getName(), DeviceFactory.class.getName()

@@ -215,8 +215,8 @@ public class ZigBeeInterface implements ZToolPacketHandler {
         final int value = (cmdId.getMsb() & 0xE0);
         if (value != 0x20) {
             throw new IllegalArgumentException("You are trying to send a non SREQ packet as synchronous command. "
-                    + "Evaluated " + value + " instead of " + 0x20 + "\nPacket "
-                    + packet.getClass().getName() + "\n" + packet
+                    + "Evaluated " + value + " instead of " + 0x20 + System.lineSeparator() + "Packet "
+                    + packet.getClass().getName() + System.lineSeparator() + packet
             );
         }
 
@@ -264,7 +264,7 @@ public class ZigBeeInterface implements ZToolPacketHandler {
         if (value != 0x40) {
             throw new IllegalArgumentException("You are trying to send a non AREQ packet. "
                     + "Evaluated " + value + " instead of "
-                    + 0x40 + "\nPacket " + packet.getClass().getName() + "\n" + packet
+                    + 0x40 + System.lineSeparator() + "Packet " + packet.getClass().getName() + System.lineSeparator() + packet
             );
         }
         sendPacket(packet);

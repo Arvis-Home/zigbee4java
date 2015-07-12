@@ -7,23 +7,24 @@ package org.bubblecloud.zigbee.util;
  * - Faster, more memory efficient (backed by simple byte array)
  * @author <a href="mailto:christopherhattonuk@gmail.com">Chris Hatton</a>
  */
-public class CircularFIFOByteBufferImpl implements FIFOByteBuffer
+public class CircularFIFOBufferImpl<T> implements FIFOBuffer<T>
 {
     public static final int DEFAULT_CAPACITY = 512;
 
     private final Object mutex = new Object();
 
-    private final byte[] buffer;
+    private final T[] buffer;
     private int position, length;
 
-    public CircularFIFOByteBufferImpl()
+    public CircularFIFOBufferImpl()
     {
         this(DEFAULT_CAPACITY);
     }
 
-    public CircularFIFOByteBufferImpl(int capacity)
+    @SuppressWarnings("unchecked")
+    public CircularFIFOBufferImpl(int capacity)
     {
-        buffer = new byte[capacity];
+        buffer = (T[])new Object[capacity];
         clear();
     }
 
@@ -35,7 +36,7 @@ public class CircularFIFOByteBufferImpl implements FIFOByteBuffer
         }
     }
 
-    public void push(byte value)
+    public void push(T value)
     {
         synchronized(mutex)
         {
@@ -51,7 +52,7 @@ public class CircularFIFOByteBufferImpl implements FIFOByteBuffer
         }
     }
 
-    public void pushAll(byte[] values, int start, int length)
+    public void pushAll(T[] values, int start, int length)
     {
         synchronized(mutex)
         {
@@ -66,20 +67,20 @@ public class CircularFIFOByteBufferImpl implements FIFOByteBuffer
         }
     }
 
-    public void pushAll(byte[] values)
+    public void pushAll(T[] values)
     {
         synchronized(mutex)
         {
-            for (byte value : values)
+            for (T value : values)
                 push(value);
         }
     }
 
-    public byte pop()
+    public T pop()
     {
         synchronized(mutex)
         {
-            byte value;
+            T value;
             if (length == 0)
                 throw new RuntimeException();
             else
@@ -93,11 +94,12 @@ public class CircularFIFOByteBufferImpl implements FIFOByteBuffer
         }
     }
 
-    public byte[] popAll()
+    @SuppressWarnings("unchecked")
+    public T[] popAll()
     {
         synchronized(mutex)
         {
-            byte[] all = new byte[length];
+            T[] all = (T[])(new Object[length]);
             for (int i = 0; i < length; ++i)
                 all[i] = pop();
 

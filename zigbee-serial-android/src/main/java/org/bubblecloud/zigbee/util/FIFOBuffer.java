@@ -3,12 +3,14 @@ package org.bubblecloud.zigbee.util;
 /**
  * @author <a href="mailto:christopherhattonuk@gmail.com">Chris Hatton</a>
  */
-public interface FIFOByteBuffer
+public interface FIFOBuffer<T>
 {
-    void   push(byte value);
-    void   pushAll(byte[] values);
-    byte   pop();
-    byte[] popAll();
+    void   push(T value);
+    void   pushAll(T[] values);
+
+    T      pop();
+    T[]    popAll();
+
     int    size();
     void   clear();
 }

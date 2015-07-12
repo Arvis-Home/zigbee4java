@@ -31,8 +31,8 @@
 
                         <platform>18</platform>
                     </sdk>
-                    <androidManifestFile>${project.basedir}/src/main/AndroidManifest.xml</androidManifestFile>
-                    <resourceDirectory>${project.basedir}/src/main/res</resourceDirectory>
+                    <androidManifestFile>${project.basedir}/src/onMainThread/AndroidManifest.xml</androidManifestFile>
+                    <resourceDirectory>${project.basedir}/src/onMainThread/res</resourceDirectory>
                 </configuration>
             </plugin>
             -->
@@ -47,10 +47,10 @@
                 <version>3.2.0</version>
                 -->
                 <configuration>
-                    <!-- <androidManifestFile>${project.basedir}/src/main/AndroidManifest.xml</androidManifestFile>-->
+                    <!-- <androidManifestFile>${project.basedir}/src/onMainThread/AndroidManifest.xml</androidManifestFile>-->
                     <!--<assetsDirectory>${project.basedir}/assets</assetsDirectory>-->
-                    <!--<resourceDirectory>${project.basedir}/src/main/res</resourceDirectory>-->
-                    <!--<nativeLibrariesDirectory>${project.basedir}/src/main/native</nativeLibrariesDirectory>-->
+                    <!--<resourceDirectory>${project.basedir}/src/onMainThread/res</resourceDirectory>-->
+                    <!--<nativeLibrariesDirectory>${project.basedir}/src/onMainThread/native</nativeLibrariesDirectory>-->
                     <sdk>
                         <platform>18</platform>
                     </sdk>
