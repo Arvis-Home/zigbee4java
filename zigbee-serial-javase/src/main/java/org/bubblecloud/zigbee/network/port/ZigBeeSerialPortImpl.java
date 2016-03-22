@@ -22,15 +22,15 @@ public class ZigBeeSerialPortImpl implements ZigBeePort
      */
     private final static Logger logger = LoggerFactory.getLogger(ZigBeeSerialPortImpl.class);
     /**
-     * The portIdentifier portIdentifier.
+     * The serial port.
      */
     private SerialComm serialPort;
     /**
-     * The portIdentifier portIdentifier input stream.
+     * The input stream.
      */
     private InputStream inputStream;
     /**
-     * The portIdentifier portIdentifier output stream.
+     * The output stream.
      */
     private OutputStream outputStream;
 

@@ -40,7 +40,7 @@ import java.util.*;
  */
 public final class ZigBeeConsole {
 
-    public static interface Observer {
+    public interface Observer {
         void didChangeState(State state);
     }
 
@@ -149,24 +149,23 @@ public final class ZigBeeConsole {
                         // Fall through and just start the network without persistence
                     }
                 }
-                
+
                 //Seemed to be removed by merge, verify and clean up
 
-                //if (!zigbeeApi.startup()) {
-                //    print("ZigBee API starting up ... [FAIL]");
-                //    return;
-                //} else {
-                //    print("ZigBee API starting up ... [OK]");
-                //}
-            
+                if (!zigbeeApi.startup()) {
+                    print("ZigBee API starting up ... [FAIL]");
+                    return;
+                } else {
+                    print("ZigBee API starting up ... [OK]");
+                }
 
                 // TODO Use something like a command line parameter to decide if permit join is re-enabled
                 // Lets disable the join functionality in console by default to improve security.
-        /*if (!zigbeeApi.permitJoin(true)) {
-            print("ZigBee API permit join enable ... [FAIL]");
-        } else {
-            print("ZigBee API permit join enable ... [OK]");
-        }*/
+                /*if (!zigbeeApi.permitJoin(true)) {
+                    print("ZigBee API permit join enable ... [FAIL]");
+                } else {
+                    print("ZigBee API permit join enable ... [OK]");
+                }*/
 
                 zigbeeApi.addDeviceListener(new DeviceListener()
                 {
@@ -278,7 +277,7 @@ public final class ZigBeeConsole {
         if(state!=nextState) {
             throw new ConsoleLifeCycleException("Invalid state set! Currently "+this.state.toString()+", expected "+nextState.toString()+", attempted "+state.toString());
         }
-        else {
+        else if(state!=this.state) {
             this.state = state;
             for(Observer observer : observers) {
                 observer.didChangeState(this.state);
